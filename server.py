@@ -1,19 +1,42 @@
-# Step 1: Import helper functions for handling web requests and JSON responses
+import json
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
-# Step 2: Use a dictionary to store vote counts for each candidate. It should be held in memory and updated as votes are received.
-# Your voting server should accept votes for three candidates: Alice, Bob and Charlie.
+candidates = ["Alice", "Bob", "Charlie"]
+votes = {name: 0 for name in candidates}
 
-# Step 3: Define a custom request handler class to manage incoming HTTP requests.
-# It should handle POST requests.
-# Write a function do_POST(self) that:
-#   Checks that the incoming request contains JSON data. 
-#   Extract the candidate name and validate that the candidate is in the allowed list defined in step 3. 
-#   Return an error response if the canddiate is not in the allowed list.
-#   If the candidate is in the allowed list, increment the vote count for that candidate and return a success message.
-# Write a function do_GET(self) that:
-#   Handles GET requests used to retrieve the current vote results. 
-#   It should check that the request is targeting the /results endpoint and respond with the current vote tally in JSON format.
+def response(handler, code, obj):
+    handler.send_response(code)
+    handler.send_header("Content-Type", "application/json")
+    handler.end_headers()
+    handler.wfile.write(json.dumps(obj).encode())
 
-# Step 4: Write a function that sets up and runs the HTTP server.
-# It should bind to localhost on port 5000.
-# It should run until manually stopped. 
+class VoteHandler(BaseHTTPRequestHandler):
+
+    def do_POST(self):
+
+        if "application/json" not in (self.headers.get("Content-Type")or ""):
+            return response(self, 400, {"error": "Wrong content-type, has to be json"})
+
+        n = int(self.headers.get("Content-Length", 0))
+        data = json.loads(self.rfile.read(n).decode())
+        cand = data.get("vote")
+
+        if cand not in candidates:
+            return response(self, 400, {"error": f"Invalid candidate '{cand}' Please vote for one of the allowed: {candidates}"})
+
+        votes[cand] += 1
+        return response(self, 200, {"message": f"Vote successfully submitted"})
+
+    def do_GET(self):
+
+        if self.path != "/results":
+            return response(self, 404, {"error": "Not found"})
+
+        return response(self, 200, votes)
+
+def run():
+
+    HTTPServer(("127.0.0.1", 5000), VoteHandler).serve_forever()
+
+if __name__ == "__main__":
+    run()
