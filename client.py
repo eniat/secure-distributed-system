@@ -4,9 +4,17 @@ from pathlib import Path
 from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.primitives.asymmetric import ec
 
-baseUrl = "127.0.0.1:5000"
+base_url = "127.0.0.1:5000"
 
 current_voter = {"id": None, "key": None}
+
+def fetch_candidates():
+    # Create the url and send get request
+    url = f"http://{base_url}/candidates"
+    res = requests.get(url, timeout= 5)
+    res.raise_for_status()
+    # return the candidates
+    return res.json()["candidates"]
 
 def load_private_key(voter_id):
     # Read and check for voter id to see if it exists
@@ -43,9 +51,9 @@ def send_vote(vote):
     signature = sign_vote(current_voter["key"], voter_id, vote)
 
     # Append the signature and id to the data along with vote
-    url = f"http://{baseUrl}/vote"
+    url = f"http://{base_url}/vote"
     data = {"voter_id": voter_id, "vote":vote, "signature": signature}
-    print ("Payload: ", data)
+    #print ("Payload: ", data)
 
     # Send vote or give relevent error on failure
     try:
@@ -56,7 +64,7 @@ def send_vote(vote):
         print(f"Failed with code: {e}")
 
 def fetch_results():
-    url = f"http://{baseUrl}/results"
+    url = f"http://{base_url}/results"
     # Send a get request and display the current results
     try:
         response = requests.get(url)
@@ -82,20 +90,31 @@ def cli():
         except ValueError as error:
             print(f"Error: {error}")
 
+    candidates = fetch_candidates()
+    cands = {cand.lower(): cand for cand in candidates}
+    print("List of valid candidates:", candidates)
     print("To vote type: vote <name of who the vote is for>")
     print("To check current results type: results")
     print("to quit type: quit")
 
     while True:
-        cmd = input("> ").strip().lower()
+        raw = input("> ").strip()
+        cmd = raw.lower()
 
         if cmd == "quit":
             print("Bye")
             break
 
         elif cmd.startswith("vote "):
-            _, vote = cmd.split(maxsplit= 1)
-            send_vote(vote.capitalize())
+            # If vote then split the vote from the candidate
+            vote_raw = raw.split(maxsplit=1)[1].strip()
+            # Lower to catch all votes
+            cand = cands.get(vote_raw.lower())
+            # If not in the candidates list then tell user and skip
+            if not cand:
+                print(f"Invalid candidate: {vote_raw}. Allowed: {candidates}")
+                continue
+            send_vote(cand)
 
         elif cmd == "results":
             fetch_results()

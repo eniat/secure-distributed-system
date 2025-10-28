@@ -82,11 +82,14 @@ class VoteHandler(BaseHTTPRequestHandler):
         return response(self, 200, {"message": f"Vote successfully submitted"})
 
     def do_GET(self):
-
-        if self.path != "/results":
-            return response(self, 404, {"error": "Not found"})
-
-        return response(self, 200, votes)
+        # Return results
+        if self.path == "/results":
+            return response(self, 200, votes)
+        # Return candidates
+        if self.path == "/candidates":
+            return response(self, 200, {"candidates": candidates})
+        # If incorrect path return error
+        return response(self, 404, {"error": "Not found"})
 
 def run():
 
