@@ -10,8 +10,13 @@ def generate_keys(voter_id):
     # Generate the PEM from private key
     private_pem = private_key.private_bytes(encoding= serialization.Encoding.PEM, format= serialization.PrivateFormat.PKCS8, encryption_algorithm= serialization.NoEncryption())
 
+    # Make a directory for the private keys
+    directory = Path("private_keys")
+    directory.mkdir(parents=True, exist_ok= True)
+
     # Write the private key pems to seperate files
-    with open(f"{voter_id}_private.pem", "wb") as f:
+    file_path = directory / f"{voter_id}_private.pem"
+    with open(file_path, "wb") as f:
         f.write(private_pem)
 
     # Generate the public pem to be returned
@@ -40,7 +45,7 @@ def main():
         db[voter_id] = public_pem
 
     # Save the updated public key database to disk
-    db_path.write_text(json.dumps(db))
+    db_path.write_text(json.dumps(db, indent= 2))
 
 if __name__ == "__main__":
     main()

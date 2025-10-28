@@ -3,9 +3,13 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.primitives.asymmetric import ec
+from threading import Lock
 
 candidates = ["Alice", "Bob", "Charlie"]
 votes = {name: 0 for name in candidates}
+ballots = []
+lock = Lock()
+election = {"status": "closed"}
 
 def response(handler, code, obj):
     # Defines what is sent back in response
@@ -42,6 +46,28 @@ def verify_signature(voter_id, vote, signature):
 class VoteHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
+        # Checks if posted is open, if so sets local status via lock
+        if self.path == "/open":
+            with lock:
+                election["status"] ="open"
+                # Clear ballot everytime voting is restarted
+                for k in votes: votes[k] = 0
+                ballots.clear()
+            return response(self, 200, {"status":"open"})
+
+        # Checks if posted is close, if so sets local status via lock
+        if self.path == "/close":
+            with lock:
+                election["status"] = "closed"
+            return response(self, 200, {"status": "closed"})
+
+        # If not /vote then gives error
+        if self.path != "/vote":
+            return response(self, 404, {"error": "Not found"})
+
+        # If not open give closed error message
+        if election["status"] != "open":
+            return response(self, 403, {"error": "Voting is closed"})
 
         if "application/json" not in (self.headers.get("Content-Type")or ""):
             return response(self, 400, {"error": "Wrong content-type, has to be json"})
@@ -62,28 +88,24 @@ class VoteHandler(BaseHTTPRequestHandler):
 
         # Verify signature before counting vote
         try:
-            db = json.loads(Path("public_keys.json").read_text())
-
-            # If noter_id doesn't exist return error
-            if voter_id not in db:
-                return response(self, 400, {"error": "Voter not registered"})
-            # load public key
-            pub_pem = db[voter_id]
-            pub_key = serialization.load_pem_public_key(pub_pem.encode())
-
-            # Verify signature using ECDSA and SHA256
-            message = f"{voter_id}:{cand}".encode()
-            pub_key.verify(bytes.fromhex(signature), message, ec.ECDSA(hashes.SHA256()))
-
+            verify_signature(voter_id, cand, signature)
         except Exception as e:
             return response(self, 401, {"error": f"Invalid signature - {e}"})
 
-        votes[cand] += 1
+        # With lock count votes and record in ballot
+        with lock:
+            votes[cand] += 1
+            ballots.append({"voter_id": voter_id, "vote": cand})
         return response(self, 200, {"message": f"Vote successfully submitted"})
 
     def do_GET(self):
-        # Return results
+        # Return voting status
+        if self.path == "/status":
+            return response(self, 200, {"status": election["status"]})
+        # Return results when election is closed
         if self.path == "/results":
+            if election["status"] != "closed":
+                return response(self, 403, {"error": "Voting is open"})
             return response(self, 200, votes)
         # Return candidates
         if self.path == "/candidates":
