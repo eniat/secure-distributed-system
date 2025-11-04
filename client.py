@@ -2,7 +2,7 @@ import requests
 import json
 from pathlib import Path
 from cryptography.hazmat.primitives import serialization, hashes
-from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.asymmetric import ec, padding
 
 base_url = "http://127.0.0.1:5000"
 
@@ -16,15 +16,25 @@ def fetch_candidates():
     # return the candidates
     return res.json()["candidates"]
 
+def fetch_pubkey():
+    # Create the url and send get request
+    url = f"{base_url}/pubkey"
+    res = requests.get(url, timeout= 5)
+    res.raise_for_status()
+    data = res.json()
+    pub = load_rsa_pubkey_pem(data["pem"].encode())
+    # return the pubkey
+    return pub, data.get("key_id")
+
 def load_private_key(voter_id):
     # Read and check for voter id to see if it exists
-    db_path = Path("public_keys.json")
+    db_path = Path("signature_keys/public_keys.json")
     db = json.loads(db_path.read_text())
     if voter_id not in db:
         raise ValueError("Voter is not registered")
 
     # Check that the private key pem exisits
-    pem_path = Path(f"private_keys/{voter_id}_private.pem")
+    pem_path = Path(f"signature_keys/{voter_id}_private.pem")
     if not pem_path.exists():
         raise ValueError("Private key not found")
 
@@ -61,7 +71,15 @@ def fetch_status():
         print(f"Error retrieving status: {e}")
         return None
 
+def load_rsa_pubkey_pem(pem_bytes: bytes):
+    # Load public pem key
+    return serialization.load_pem_public_key(pem_bytes)
 
+def encrypt_vote(pubkey, vote: str)-> str:
+    # Encrypt the vote
+    ciphertext = pubkey.encrypt(vote.encode(), padding.OAEP(mgf= padding.MGF1(algorithm= hashes.SHA256()), algorithm= hashes.SHA256(), label=None))
+    # return as hex
+    return ciphertext.hex()
 
 def send_vote(vote):
 
@@ -76,13 +94,20 @@ def send_vote(vote):
         print("Not authenticated")
         return
 
+    try:
+        pub, key_id = fetch_pubkey()
+    except Exception as e:
+        print(f"error fetching public key: {e}")
+        return
+
     # Gets the users voter_id and creates their signature
     voter_id = current_voter["id"]
-    signature = sign_vote(current_voter["key"], voter_id, vote)
+    cipher = encrypt_vote(pub, vote)
+    signature = sign_vote(current_voter["key"], voter_id, cipher)
 
     # Append the signature and id to the data along with vote
     url = f"{base_url}/vote"
-    data = {"voter_id": voter_id, "vote":vote, "signature": signature}
+    data = {"voter_id": voter_id, "ciphertext":cipher, "signature": signature, "key_id": key_id}
     #print ("Payload: ", data)
 
     # Send vote or give relevent error on failure
@@ -105,11 +130,16 @@ def fetch_results():
     # Send a get request and display the current results
     try:
         respo = requests.get(url)
-        respo.raise_for_status()
         results = respo.json()
         print("Current votes:")
         for cand, count in results.items():
             print(f"{cand}:{count}")
+    except requests.exceptions.HTTPError as e:
+        try:
+            err = e.response.json()
+            print(err.get("error", f"Error: {e.response.status_code}"))
+        except Exception:
+            print(f"Error: {e.response.status_code}: {e.response.text}")
     except requests.exceptions.RequestException as e:
         print(f"Failed with code: {e}")
 

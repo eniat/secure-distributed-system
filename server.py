@@ -10,6 +10,8 @@ votes = {name: 0 for name in candidates}
 ballots = []
 lock = Lock()
 election = {"status": "closed"}
+active_key = {"key_id": None, "pem" :None}
+final_results = None
 
 def response(handler, code, obj):
     # Defines what is sent back in response
@@ -18,10 +20,9 @@ def response(handler, code, obj):
     handler.end_headers()
     handler.wfile.write(json.dumps(obj).encode())
 
-
 def load_public_key( voter_id):
     # Check that the public_keys.json exists
-    db_path = Path("public_keys.json")
+    db_path = Path("signature_keys/public_keys.json")
     if not db_path.exists():
         raise ValueError("no public_keys to load")
 
@@ -46,20 +47,46 @@ def verify_signature(voter_id, vote, signature):
 class VoteHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
+        global final_results
         # Checks if posted is open, if so sets local status via lock
         if self.path == "/open":
             with lock:
+                # If no public key, don't allow open
+                if not active_key["pem"]:
+                    return response(self, 400, {"error": "no pubkey set"})
                 election["status"] ="open"
                 # Clear ballot everytime voting is restarted
                 for k in votes: votes[k] = 0
                 ballots.clear()
+                final_results = None
             return response(self, 200, {"status":"open"})
 
         # Checks if posted is close, if so sets local status via lock
         if self.path == "/close":
             with lock:
                 election["status"] = "closed"
+                active_key["key_id"] = None
+                active_key["pem"] = None
             return response(self, 200, {"status": "closed"})
+
+        if self.path == "/pubkey":
+            # admin.py posts public RSA key
+            n = int(self.headers.get("Content-Length", 0))
+            data = json.loads(self.rfile.read(n).decode())
+            active_key["key_id"] = data.get("key_id")
+            active_key["pem"] = data.get("pem")
+            return response(self, 200, {"status": "pubkey set"})
+
+        # stores tally from tallier
+        if self.path == "/tally":
+            # Check election is closed
+            if election["status"] != "closed":
+                return response(self, 403, {"error": "election still open"})
+            n = int(self.headers.get("Content-Length", 0))
+            data = json.loads(self.rfile.read(n).decode())
+            results = data.get("results")
+            final_results = results
+            return response(self, 200, {"status": "tally scored"})
 
         # If not /vote then gives error
         if self.path != "/vote":
@@ -76,29 +103,46 @@ class VoteHandler(BaseHTTPRequestHandler):
         data = json.loads(self.rfile.read(n).decode())
 
         # Extract data from json
-        cand = data.get("vote")
+        cipher = data.get("ciphertext")
         voter_id = data.get("voter_id")
         signature = data.get("signature")
 
         # Check that all required information was sent and that the vote is valid
-        if not voter_id or not signature or not cand:
-            return response(self, 400, {"error": "Missing voter_id, vote or signature"})
-        if cand not in candidates:
-            return response(self, 400, {"error": f"Invalid candidate '{cand}' Please vote for one of the allowed: {candidates}"})
+        if not voter_id or not signature or not cipher:
+            return response(self, 400, {"error": "Missing voter_id, ciphertext or signature"})
 
         # Verify signature before counting vote
         try:
-            verify_signature(voter_id, cand, signature)
+            verify_signature(voter_id, cipher, signature)
         except Exception as e:
             return response(self, 401, {"error": f"Invalid signature - {e}"})
 
         # With lock count votes and record in ballot
         with lock:
-            votes[cand] += 1
-            ballots.append({"voter_id": voter_id, "vote": cand})
+            ballots.append({"voter_id": voter_id, "ciphertext": cipher, "key_id": active_key["key_id"]})
         return response(self, 200, {"message": f"Vote successfully submitted"})
 
     def do_GET(self):
+        # Fetches elegible voters
+        if self.path == "/voters":
+            db_path = Path("signature_keys/public_keys.json")
+            if not db_path.exists():
+                return response(self, 200, {"voters":[]})
+            try:
+                db = json.loads(db_path.read_text())
+                return response(self, 200, {"voters": list(db.keys())})
+            except Exception as e:
+                return response(self, 500, {"error" : f"failed to load voters: {e}"})
+        # Gets ballots for tallying
+        if self.path == "/ballots":
+            if election["status"] != "closed":
+                return response(self, 403, {"error": "voting is open"})
+            return response(self, 200, {"ballots":ballots})
+        # Fetches RSA pubkey
+        if self.path == "/pubkey":
+            if not active_key["pem"]:
+                return response(self, 404, {"error": "no pubkey"})
+            return response(self, 200, active_key)
         # Return voting status
         if self.path == "/status":
             return response(self, 200, {"status": election["status"]})
@@ -106,7 +150,9 @@ class VoteHandler(BaseHTTPRequestHandler):
         if self.path == "/results":
             if election["status"] != "closed":
                 return response(self, 403, {"error": "Voting is open"})
-            return response(self, 200, votes)
+            if final_results is None:
+                return response(self, 404, {"error": "No tally yet"})
+            return response(self, 200, final_results)
         # Return candidates
         if self.path == "/candidates":
             return response(self, 200, {"candidates": candidates})
