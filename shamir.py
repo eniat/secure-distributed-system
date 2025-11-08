@@ -1,3 +1,4 @@
+import random
 import secrets
 from typing import List, Tuple
 
@@ -93,6 +94,40 @@ def reconstruct(shares: List[Share], p: int) -> int:
     if len(set(x_s)) != len(x_s):
         raise ValueError("Duplicate x's in shares")
     return lagrange_interpolate_at_zero(x_s, y_s, p)
+
+# The following function finds a prime that is greater than or equal to some target value.
+def is_probable_prime(n: int, rounds: int = 8) -> bool:
+    if n < 2:
+        return False
+    small_primes = [2,3,5,7,11,13,17,19,23,29]
+    for p in small_primes:
+        if n % p == 0:
+            return n == p
+    d = n - 1
+    s = 0
+    while d % 2 == 0:
+        d //= 2
+        s += 1
+    for _ in range(rounds):
+        a = random.randrange(2, n - 1)
+        x = pow(a, d, n)
+        if x == 1 or x == n - 1:
+            continue
+        for _ in range(s - 1):
+            x = pow(x, 2, n)
+            if x == n - 1:
+                break
+        else:
+            return False
+    return True
+
+# This function will test odd numbers to find a prime.
+# You can use it to pick a prime for Shamir secret sharing that is greater than the secret key.
+def next_probable_prime_at_least(m: int) -> int:
+    candidate = m if m % 2 == 1 else m + 1
+    while not is_probable_prime(candidate):
+        candidate += 2
+    return candidate
 
 
 # Step 6: Define a dunction demo() that will run and perform basic tests on your code.

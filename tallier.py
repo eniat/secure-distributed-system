@@ -9,6 +9,19 @@ from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicNumbers, RSAP
 from shamir import reconstruct
 
 base_url = "http://127.0.0.1:5000"
+current_tallier = {"id": None, "token": None}
+
+def auth_login(tallier_id: str, password: str) -> str | None:
+    # Build the login url
+    url = f"{base_url}/auth/login"
+    # Try login if not successful then error message
+    try:
+        res = requests.post(url, json= {"role": "tallier", "id": tallier_id, "password": password}, timeout=5)
+        res.raise_for_status()
+        return res.json().get("token")
+    except Exception as e:
+        print(f"Auth failed: {e}")
+        return None
 
 def fetch_candidates():
     # Create the url and send get request
@@ -21,7 +34,9 @@ def fetch_candidates():
 def fetch_ballots():
     # Create the url and send get request
     url = f"{base_url}/ballots"
-    res = requests.get(url, timeout= 5)
+    # Create headers
+    headers = {"Authorisation": f"Bearer {current_tallier['token']}"}
+    res = requests.get(url, headers= headers, timeout= 5)
     res.raise_for_status()
     # return the ballots
     return res.json()["ballots"]
@@ -29,7 +44,9 @@ def fetch_ballots():
 def post_tally(key_id: str, results :dict):
     # Create the url and send post request
     url = f"{base_url}/tally"
-    res = requests.post(url, json={"key_id": key_id, "results": results}, timeout= 5)
+    # Create headers
+    headers = {"Authorisation": f"Bearer {current_tallier['token']}"}
+    res = requests.post(url, json={"key_id": key_id, "results": results}, headers= headers, timeout= 5)
     res.raise_for_status()
     # return the json
     return res.json()
@@ -127,6 +144,16 @@ def dedup_ballot(ballots, key_id: str):
 
 def cli():
     print("Tallier system")
+    # Prompt tallier for username and password to get token
+    while True:
+        tallier_id = input("Enter tallier ID: ").strip()
+        password = input("Enter tallier password: ").strip()
+        token = auth_login(tallier_id, password)
+        if token:
+            current_tallier["id"] = tallier_id #type:ignore
+            current_tallier["token"] = token #type:ignore
+            break
+        print("Invalid username or password")
 
     # Pick Election
     key_id = input("Enter election key_id: ").strip()
@@ -148,7 +175,7 @@ def cli():
             print("No ballots for that key_id")
             return
         candidates = set(fetch_candidates())
-        tally = {}
+        tally: dict[str, int] = {}
         failed= 0
 
         # Decrupt and count the ballots, keepong track of how many fail
@@ -157,7 +184,8 @@ def cli():
                 point = priv.decrypt(bytes.fromhex(ball["ciphertext"]), padding.OAEP(mgf= padding.MGF1(algorithm= hashes.SHA256()), algorithm= hashes.SHA256(), label= None)).decode()
                 if point in candidates:
                     tally[point] = tally.get(point, 0) +1
-            except Exception:
+            except Exception as e:
+                print(f"error: {e}")
                 failed +=1
 
         # post tally to server and let user know of any fails

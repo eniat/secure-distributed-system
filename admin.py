@@ -4,11 +4,23 @@ import requests
 from pathlib import Path
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
-from rsa_shamir import next_probable_prime_at_least
-from shamir import generate_shares
+from shamir import generate_shares, next_probable_prime_at_least
 
 base_url = "http://127.0.0.1:5000"
 RSA_KEY_SIZE = 2048
+current_admin = {"id": None, "token": None}
+
+def auth_login(admin_id: str, password: str) -> str | None:
+    # Build the login url
+    url = f"{base_url}/auth/login"
+    # Try login if not successful then error message
+    try:
+        res = requests.post(url, json= {"role": "admin", "id": admin_id, "password": password}, timeout=5)
+        res.raise_for_status()
+        return res.json().get("token")
+    except Exception as e:
+        print(f"Auth failed: {e}")
+        return None
 
 def generate_keys(N, T):
 
@@ -50,15 +62,17 @@ def generate_keys(N, T):
     }
 
 def post_pubkey(key_id, public_pem):
+    # Create url and header
     url = f"{base_url}/pubkey"
-    resp = requests.post(url, json={"key_id": key_id, "pem": public_pem}, timeout=5)
+    headers = {"Authorisation": f"Bearer {current_admin['token']}"}
+    resp = requests.post(url, json={"key_id": key_id, "pem": public_pem},headers=headers, timeout=5)
     resp.raise_for_status()
     print(resp.json())
 
 def send_post(path):
     # Create the full url from the base_url and the given path ( protected from leading slash)
     server_url = f"{base_url}/{path.lstrip('/')}"
-    headers = {"Content-Type": "application/json"}
+    headers = {"Authorisation": f"Bearer {current_admin['token']}", "Content-Type": "application/json"}
 
     try:
         # Generate a post request
@@ -107,6 +121,16 @@ def helper():
 
 def main():
     print("Admin System")
+    # Prompt admin for username and password to get token
+    while True:
+        admin_id = input("Enter admin ID: ").strip()
+        password = input("Enter admin password: ").strip()
+        token = auth_login(admin_id, password)
+        if token:
+            current_admin["id"] = admin_id #type:ignore
+            current_admin["token"] = token #type:ignore
+            break
+        print("Invalid username or password")
 
     helper()
     while True:

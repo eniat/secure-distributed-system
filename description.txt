@@ -1,0 +1,42 @@
+Architecture & purpose
+- Admin: Which generates an RSA election keypair and splits the private exponent with Shamir. It then posts the public key to the server and opens/closes the election.
+- Client: Authenticates a voter by loading their private key from the given id. Signs & via rsa public key encrypts the ballot. Also reads the status of election and results when counted.
+- Registrar: Registers voters by creating ECDSA keypairs for them and storing privatekeys and publishes the public keys.
+- Server: Answers get and post requests for voters, status, candidates, ballot submission, public key distribution, posting of final tallies ect. Maintains own memory state guarded by lock. Signature verification also handled here.
+- Shamir: Shamir share generation and reconstruction functions, a demo to test it works and next large probable prime function.
+- Tallier: Once voting is closed, fetches ballots reconstructs the RSA private exponent if over the threshold of required shares given. Rebuilds rsa private key and decrypts ballots, tallies/deduplicates and posts to server
+- Kerberos: Retrieves and makes a secret. Uses secret in creation of auth tokens with expiry dates which it can verify. Hashes passwords and checks hashed passwords against for authentication.
+
+Component interaction
+- Registrar writes public keys and server only trusts signatures it can verify from this file
+- Admin posts RSA public key to server to start election
+- Client submits voterid, ciphertext, signature and keyid to the server. The server only accepts when the status of the voting is set to open, and signature is verified
+- Tallier runs after close reconstructs d from shares, decrypts ballots with a matching keyid for the specific election, dedupes and posts to server
+- Server uses kerberos for validation of tokens and authentication of users
+
+Running instructions
+1. Start the server:
+python server.py
+2. Register voters - choose the amount then type voters to view voter_ids
+python registrar.py
+add *<amount of voters wanted>
+voters
+3. Open the election and enter amount of talliers and the threshold to recreate the RSA for decryption
+python admin.py
+<login with username and password>
+open
+<talliers>
+<threshold amount>
+4. Clients can now vote after they are authenticated with their voter_id
+python client.py
+<voter_id and password to login>
+vote <candidate of choosing>
+5. Close election via admin.py
+close
+6. Decrypt then tally the votes/ deduplicate them and return the results
+python tallier.py
+< enter username and password and log in>
+<enter the key_id of the election to tally for>
+<Enter the amount of shares required to succeed via their id>
+7. Client.py can view the results once tallying is completed if tried before error letting them know still tallying appears
+results

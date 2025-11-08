@@ -6,7 +6,19 @@ from cryptography.hazmat.primitives.asymmetric import ec, padding
 
 base_url = "http://127.0.0.1:5000"
 
-current_voter = {"id": None, "key": None}
+current_voter = {"id": None, "key": None, "token": None}
+
+def auth_login(voter_id: str, password: str) -> str | None:
+    # Build the login url
+    url = f"{base_url}/auth/login"
+    # Try login if not successful then error message
+    try:
+        res = requests.post(url, json= {"role": "voter", "id": voter_id, "password": password}, timeout=5)
+        res.raise_for_status()
+        return res.json().get("token")
+    except Exception as e:
+        print(f"Auth failed: {e}")
+        return None
 
 def fetch_candidates():
     # Create the url and send get request
@@ -93,17 +105,22 @@ def send_vote(vote):
     if not current_voter["key"]:
         print("Not authenticated")
         return
-
+    # retreive the public key
     try:
         pub, key_id = fetch_pubkey()
     except Exception as e:
         print(f"error fetching public key: {e}")
         return
-
+    # Check the voter has a current token
+    if not current_voter["token"]:
+        print("Token is missing")
+        return
+    # Create headers
+    headers = {"Authorisation" : f"Bearer {current_voter['token']}", "Content-Type": "application/json"}
     # Gets the users voter_id and creates their signature
     voter_id = current_voter["id"]
     cipher = encrypt_vote(pub, vote)
-    signature = sign_vote(current_voter["key"], voter_id, cipher)
+    signature = sign_vote(current_voter["key"], voter_id, cipher) #type:ignore
 
     # Append the signature and id to the data along with vote
     url = f"{base_url}/vote"
@@ -112,7 +129,7 @@ def send_vote(vote):
 
     # Send vote or give relevent error on failure
     try:
-        resp = requests.post(url, json=data)
+        resp = requests.post(url, headers=headers, json=data)
         resp.raise_for_status()
         print(f"Server response: {resp.json()['message']}")
     except requests.exceptions.RequestException as e:
@@ -138,8 +155,8 @@ def fetch_results():
         try:
             err = e.response.json()
             print(err.get("error", f"Error: {e.response.status_code}"))
-        except Exception:
-            print(f"Error: {e.response.status_code}: {e.response.text}")
+        except Exception as error:
+            print(f"Error: {e.response.status_code}: {e.response.text}: {error}")
     except requests.exceptions.RequestException as e:
         print(f"Failed with code: {e}")
 
@@ -155,11 +172,18 @@ def cli():
     print("Voting System")
     # Check that the voter id exists and then assign to voter
     while True:
-        voter_id = input("Enter voter ID: ")
+        voter_id = input("Enter voter ID: ").strip()
+        password = input("Enter voter password: ").strip()
         try:
             key = load_private_key(voter_id)
-            current_voter["id"] = voter_id
-            current_voter["key"] = key
+            token = auth_login(voter_id, password)
+            # If login fails then give error
+            if not token:
+                print("invalid username or password")
+                continue
+            current_voter["id"] = voter_id #type:ignore
+            current_voter["key"] = key #type:ignore
+            current_voter["token"] = token #type:ignore
             break
         except ValueError as error:
             print(f"Error: {error}")

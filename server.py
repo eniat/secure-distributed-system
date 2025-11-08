@@ -1,9 +1,11 @@
 import json
+import time
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.primitives.asymmetric import ec
 from threading import Lock
+from kerberos import load_user, verify_password, create_token, role_from_header
 
 candidates = ["Alice", "Bob", "Charlie"]
 votes = {name: 0 for name in candidates}
@@ -12,6 +14,23 @@ lock = Lock()
 election = {"status": "closed"}
 active_key = {"key_id": None, "pem" :None}
 final_results = None
+auth_roles = ("admin", "tallier", "voter")
+seen_votes: set[tuple[str, str]] = set()
+
+def add_results(key_id: str, results: dict):
+    # set results file path
+    results_file = Path("signature_keys/election_results.json")
+    results_file.parent.mkdir(parents=True, exist_ok=True)
+    # Create an entry and check file exists and write to it
+    entry = {"key_id": key_id, "timestamp": int(time.time()), "results": results}
+    try:
+        data = json.loads(results_file.read_text())
+        if not isinstance(data, list):
+            data = []
+    except Exception:
+        data = []
+    data.append(entry)
+    results_file.write_text(json.dumps(data, indent= 2))
 
 def response(handler, code, obj):
     # Defines what is sent back in response
@@ -46,23 +65,70 @@ def verify_signature(voter_id, vote, signature):
 
 class VoteHandler(BaseHTTPRequestHandler):
 
+    def require(self, roles: set[str]):
+        # retreive headers
+        header = self.headers.get("Authorisation") or ""
+        # try return role from header if not raise correct errors depending
+        try:
+            return role_from_header(header, roles)
+        except PermissionError as e:
+            code = 401 if "missing" in str(e) else 403
+            response(self, code, {"error": str(e)})
+        except Exception as e:
+            response(self, 401, {"error":f"auth failed: {e}"})
+        return None
+    # require user to be admin
+    def require_admin(self): return self.require({"admin"})
+    # require user to be admin
+    def require_tallier(self):return self.require({"tallier"})
+    # require user to be admin
+    def require_voter(self): return self.require({"voter"})
+
     def do_POST(self):
         global final_results
+        # Adds a login endpoint and verifies user logging in
+        if self.path == "/auth/login":
+            if "application/json" not in (self.headers.get("Content-Type") or""):
+                return response(self, 400, {"error": "Must be json"})
+            # Load json and get role, user_id and password
+            n = int(self.headers.get("Content-Length", 0))
+            data = json.loads(self.rfile.read(n).decode())
+            role = str(data.get("role", "")).strip()
+            user_id = str(data.get("id", "")).strip()
+            password = str(data.get("password", ""))
+            # Check that the role is valid and all required data passed
+            if role not in auth_roles or not user_id or not password:
+                return response(self, 400, {"error": "issue with role, password or user_id"})
+            # Retrieve the user and verify the given password
+            rec = load_user(role, user_id)
+            if not rec or not verify_password(password, rec["salt"], rec["hash"]):
+                return response(self, 401, {"error": "Incorrect username or password"})
+            # If succesful create token for user
+            token = create_token(role, user_id, lifetime= 3600)
+            return response(self, 200, {"token": token})
+
         # Checks if posted is open, if so sets local status via lock
         if self.path == "/open":
+            # Check that user is an admin
+            if not self.require_admin():
+                return
             with lock:
                 # If no public key, don't allow open
                 if not active_key["pem"]:
                     return response(self, 400, {"error": "no pubkey set"})
                 election["status"] ="open"
-                # Clear ballot everytime voting is restarted
+                # Clear ballot and seen votes everytime voting is restarted
                 for k in votes: votes[k] = 0
                 ballots.clear()
+                seen_votes.clear()
                 final_results = None
             return response(self, 200, {"status":"open"})
 
         # Checks if posted is close, if so sets local status via lock
         if self.path == "/close":
+            # Check that user is an admin
+            if not self.require_admin():
+                return
             with lock:
                 election["status"] = "closed"
                 active_key["key_id"] = None
@@ -70,6 +136,9 @@ class VoteHandler(BaseHTTPRequestHandler):
             return response(self, 200, {"status": "closed"})
 
         if self.path == "/pubkey":
+            # Check that user is an admin
+            if not self.require_admin():
+                return
             # admin.py posts public RSA key
             n = int(self.headers.get("Content-Length", 0))
             data = json.loads(self.rfile.read(n).decode())
@@ -79,13 +148,19 @@ class VoteHandler(BaseHTTPRequestHandler):
 
         # stores tally from tallier
         if self.path == "/tally":
+            # Check that user is a tallier
+            if not self.require_tallier():
+                return
             # Check election is closed
             if election["status"] != "closed":
                 return response(self, 403, {"error": "election still open"})
             n = int(self.headers.get("Content-Length", 0))
             data = json.loads(self.rfile.read(n).decode())
+            key_id = data.get("key_id")
             results = data.get("results")
-            final_results = results
+            with lock:
+                add_results(key_id, results)
+                final_results = results
             return response(self, 200, {"status": "tally scored"})
 
         # If not /vote then gives error
@@ -95,6 +170,10 @@ class VoteHandler(BaseHTTPRequestHandler):
         # If not open give closed error message
         if election["status"] != "open":
             return response(self, 403, {"error": "Voting is closed"})
+
+        # Check that user is a voter
+        if not self.require_voter():
+            return
 
         if "application/json" not in (self.headers.get("Content-Type")or ""):
             return response(self, 400, {"error": "Wrong content-type, has to be json"})
@@ -117,9 +196,21 @@ class VoteHandler(BaseHTTPRequestHandler):
         except Exception as e:
             return response(self, 401, {"error": f"Invalid signature - {e}"})
 
-        # With lock count votes and record in ballot
+        # Check voter_id and key_id haven't already occured
         with lock:
+            # Get key_id if not one then raise error
+            key_id = str(active_key.get("key_id") or "")
+            if not key_id:
+                return response(self, 400, {"error": "No key_id"})
+            # If already voted then raise error
+            key = (key_id, voter_id)
+            if key in seen_votes:
+                return response(self, 409, {"error": "Already voted, denied"})
+            # Add key to seen_votes
+            seen_votes.add(key)
+            # record in ballot
             ballots.append({"voter_id": voter_id, "ciphertext": cipher, "key_id": active_key["key_id"]})
+
         return response(self, 200, {"message": f"Vote successfully submitted"})
 
     def do_GET(self):
@@ -135,6 +226,9 @@ class VoteHandler(BaseHTTPRequestHandler):
                 return response(self, 500, {"error" : f"failed to load voters: {e}"})
         # Gets ballots for tallying
         if self.path == "/ballots":
+            # Check that user is a tallier
+            if not self.require_tallier():
+                return
             if election["status"] != "closed":
                 return response(self, 403, {"error": "voting is open"})
             return response(self, 200, {"ballots":ballots})
