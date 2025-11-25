@@ -57,7 +57,7 @@ def load_user(role: str, user_id:str) -> Optional[Dict[str, str]]:
         print(f"error: {e}")
         return None
 
-def create_token(role: str, user_id:str, lifetime: int = 3600) -> str:
+def create_token(role: str, user_id:str, lifetime: int ) -> str:
     # get current time and append it with the token expiry time
     now = int(time.time())
     payload = {"role": role, "id": user_id, "iat": now, "exp": now + lifetime}

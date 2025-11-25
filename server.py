@@ -104,7 +104,7 @@ class VoteHandler(BaseHTTPRequestHandler):
             if not rec or not verify_password(password, rec["salt"], rec["hash"]):
                 return response(self, 401, {"error": "Incorrect username or password"})
             # If succesful create token for user
-            token = create_token(role, user_id, lifetime= 3600)
+            token = create_token(role, user_id, lifetime= 600)
             return response(self, 200, {"token": token})
 
         # Checks if posted is open, if so sets local status via lock
