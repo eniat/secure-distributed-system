@@ -1,12 +1,14 @@
 import json
 import time
 import logging
+import hmac
+import hashlib
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.primitives.asymmetric import ec
 from threading import Lock
-from kerberos import load_user, verify_password, create_token, role_from_header
+from kerberos import load_user, verify_password, create_token, role_from_header, get_secret
 
 candidates = ["Alice", "Bob", "Charlie"]
 votes = {name: 0 for name in candidates}
@@ -36,6 +38,13 @@ def log_action(action, *, role= None, user_id=None, **extra):
     # Update the log and add extra if it exists
     payload.update(extra)
     logging.info("%s | %s", action,json.dumps(payload, separators=(",", ":")))
+
+def pseudonym_gen(voter_id: str, key_id:str) -> str:
+    # Generate per election pseudonym for voters
+    msg = f"{voter_id}:{key_id}".encode("utf-8")
+    digest = hmac.new(get_secret(), msg, hashlib.sha256).hexdigest()
+    # return short pseudonym
+    return digest[:16]
 
 def add_results(key_id: str, results: dict):
     # set results file path
@@ -383,15 +392,25 @@ class VoteHandler(BaseHTTPRequestHandler):
                     reason="voting is open"
                 )
                 return response(self, 403, {"error": "voting is open"})
+            # Build anonymous ballots
+            anon_ballots =[]
+            for ball in ballots:
+                voter_id= ball.get("voter_id")
+                key_id = str(ball.get("key_id"))
+                anon_ballots.append({
+                    "ciphertext": ball["ciphertext"],
+                    "key_id": key_id,
+                    "voter_id": pseudonym_gen(voter_id, key_id)
+                })
             log_action(
                 "ballots_view",
                 role=claim.get("role"),
                 user_id=claim.get("id"),
                 path=self.path,
                 method=self.command,
-                ballots_count = len(ballots)
+                ballots_count = len(anon_ballots)
             )
-            return response(self, 200, {"ballots":ballots})
+            return response(self, 200, {"ballots":anon_ballots})
         # Fetches RSA pubkey
         if self.path == "/pubkey":
             if not active_key["pem"]:
