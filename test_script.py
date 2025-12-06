@@ -1,4 +1,4 @@
-import subprocess, sys, time, json, glob, re
+import subprocess, sys, time, json
 from pathlib import Path
 
 import requests
