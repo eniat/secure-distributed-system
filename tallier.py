@@ -142,6 +142,40 @@ def dedup_ballot(ballots, key_id: str):
         unique.append(ball)
     return unique
 
+def run_tally_for_key_id(key_id: str):
+    # Load shares, Threshold, n , e, P, p, q, reconstruct d and build key
+    n, e, P, T, shares = load_shares(key_id)
+    p, q = load_secret(key_id)
+    d = reconstruct(shares, P)
+    priv = build_private_key(n, e, d, p, q)
+
+    # fetch and dedupe the ballots and fetch candidates
+    ballots = dedup_ballot(fetch_ballots(), key_id)
+    if not ballots:
+        print("No ballots for that key_id")
+        return
+    candidates = set(fetch_candidates())
+    tally: dict[str, int] = {}
+    failed = 0
+
+    # Decrupt and count the ballots, keepong track of how many fail
+    for ball in ballots:
+        try:
+            point = priv.decrypt(bytes.fromhex(ball["ciphertext"]),
+                                 padding.OAEP(mgf=padding.MGF1(algorithm=hashes.SHA256()), algorithm=hashes.SHA256(),
+                                              label=None)).decode()
+            if point in candidates:
+                tally[point] = tally.get(point, 0) + 1
+        except Exception as e:
+            print(f"error: {e}")
+            failed += 1
+
+    # post tally to server and let user know of any fails
+    post_tally(key_id, tally)
+    print("Tally complete: ", tally)
+    if failed:
+        print("Amount of failed ballots: ", failed)
+
 def cli():
     print("Tallier system")
     # Prompt tallier for username and password to get token
@@ -163,36 +197,7 @@ def cli():
         return
 
     try:
-        # Load shares, Threshold, n , e, P, p, q, reconstruct d and build key
-        n, e, P, T, shares = load_shares(key_id)
-        p, q = load_secret(key_id)
-        d = reconstruct(shares, P)
-        priv = build_private_key(n, e,d, p, q)
-
-        # fetch and dedupe the ballots and fetch candidates
-        ballots = dedup_ballot(fetch_ballots(), key_id)
-        if not ballots:
-            print("No ballots for that key_id")
-            return
-        candidates = set(fetch_candidates())
-        tally: dict[str, int] = {}
-        failed= 0
-
-        # Decrupt and count the ballots, keepong track of how many fail
-        for ball in ballots:
-            try:
-                point = priv.decrypt(bytes.fromhex(ball["ciphertext"]), padding.OAEP(mgf= padding.MGF1(algorithm= hashes.SHA256()), algorithm= hashes.SHA256(), label= None)).decode()
-                if point in candidates:
-                    tally[point] = tally.get(point, 0) +1
-            except Exception as e:
-                print(f"error: {e}")
-                failed +=1
-
-        # post tally to server and let user know of any fails
-        post_tally(key_id, tally)
-        print("Tally complete: ", tally)
-        if failed:
-            print("Amount of failed ballots: ", failed)
+        run_tally_for_key_id(key_id)
 
     except Exception as e:
         print(f"Error: {e}")
