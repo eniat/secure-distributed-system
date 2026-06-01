@@ -4,20 +4,6 @@ from typing import List, Tuple
 
 Share = Tuple[int, int]
 
-# Define a function 'eval_polynomial' that evaluates a polynomial f(x) = s + f1*x^1 + f2*x^2 + ... + ft-1*x^{t-1} at a point x (modulo a prime).
-#   The function will be called in function generate_shares.
-#   Your function should take as input:
-#       1. a list of coefficients 'coeffs'. The coefficients list coeffs is ordered so coeffs[0] is the constant term (i.e., secret s), coeffs[1] is f1, coeffs[2] is f2 and so on.
-#       2. an integer 'x' (the point at which the polynomial will be evaluated)
-#       3. a prime number 'p'
-#   Initialise two variables:
-#       1. 'result' will accumulate the value of the polynomial at point x. It should start at 0.
-#       2. 'power' will hold successive powers of x, beginning at x**0 = 1.
-#   Evaluate the polynomial by looping through each coefficient c in coeffs:
-#       1. Multiply c by the current power and add to 'result'.
-#       2. Update the power by multiplying it by x.
-#       3. After the loop, return the result.
-#       4. Remember to perform all computations modulo prime p.
 def eval_polynomial(coeffs : List[int], x: int, p: int) -> int:
     result = 0
     power = 1
@@ -27,20 +13,7 @@ def eval_polynomial(coeffs : List[int], x: int, p: int) -> int:
         power = (power * x) %p
     return result
 
-# Define a function 'generate_shares' that will generate n shares.
-#   Your function should take as input:
-#       1. the secret to be shared 'secret'
-#       2. the number of shares to be created 'n'
-#       3. the threshold 't'
-#       4. prime number 'p'
-#   Construct a ranadom polynomial of degree t-1.
-#       Your polynomial will be defined by its list of coefficients 'coeffs'
-#       Define coeffs[0] = secret
-#       For 1,...,t-1, the coefficient should be a random value chosen from the range 0,...,prime-1.
-#   Produce shares by evaluating the polynomial at x = 1,...,n.
-#       That is, for each i = 1,...,n, compute y = f(i) using eval_polynomial.
-#       Store each share as a tuple (i, y) in a list.
-#   Return the list of shares.
+
 def generate_shares(secret:int, n: int, t: int, p:int) -> List[Share]:
     if not (1 <= t <= n):
         raise ValueError("1 <= t <= n")
@@ -55,11 +28,6 @@ def generate_shares(secret:int, n: int, t: int, p:int) -> List[Share]:
     return shares
 
 
-# The following function reconstructs the polynomial for a list of shares.
-# It uses a method callled Lagrange interpolation to compute f(0) given a list of shares.
-# It takes as input:
-#   1. a list of elements 'i' incidcating which shares are being combined.
-#   2. a list of elements 'y', which are the shares corresponding to the 'i' indices.
 def lagrange_interpolate_at_zero(x_s: List[int], y_s: List[int], prime: int) -> int:
     assert len(x_s) == len(y_s)
     k = len(x_s)
@@ -79,15 +47,6 @@ def lagrange_interpolate_at_zero(x_s: List[int], y_s: List[int], prime: int) -> 
         total = (total + yj * lj) % prime
     return total
 
-# Step 5: Define a function 'reconstruct' that will return the secret from a list of provided shares.
-#   Your function should take as input:
-#       1. a list of shares 'List'
-#       2. prime 'p'
-#   Separate the input list of tuples returned by generate_shares into two lists:
-#       1. x_s that will hold the first element of each tuple, the participants 'i' value
-#       2. y_s which will hold the corresponding share value
-#   Call function lagrange_interpolate_at_zero
-#   Return the secret
 def reconstruct(shares: List[Share], p: int) -> int:
     x_s = [x for x, _ in shares]
     y_s = [y for _, y in shares]
@@ -122,7 +81,6 @@ def is_probable_prime(n: int, rounds: int = 8) -> bool:
     return True
 
 # This function will test odd numbers to find a prime.
-# You can use it to pick a prime for Shamir secret sharing that is greater than the secret key.
 def next_probable_prime_at_least(m: int) -> int:
     candidate = m if m % 2 == 1 else m + 1
     while not is_probable_prime(candidate):
@@ -130,9 +88,7 @@ def next_probable_prime_at_least(m: int) -> int:
     return candidate
 
 
-# Step 6: Define a dunction demo() that will run and perform basic tests on your code.
 def demo():
-    # You can use the values below to test your code.
     prime = 2**127 - 1
     secret = 42
     n = 6
