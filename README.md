@@ -42,7 +42,7 @@ The system models voter registration, election opening, ballot submission, elect
 ├── shamir.py         # Shamir Secret Sharing
 ├── tallier.py        # Key reconstruction and vote tallying
 ├── test_script.py    # Automated full-system test
-├── SCC.351-Report.pdf # Written security analysis and design report
+├── Report.pdf # Written security analysis and design report
 └── README.md
 ```
 
