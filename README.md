@@ -58,7 +58,7 @@ server.log         # Server-side audit log
 
 ## Report
 
-`SCC.351-Report.pdf` contains the written security analysis for the system. The README gives the practical setup and usage notes, while the report explains the design decisions, assumptions and threat model behind the implementation.
+`Report.pdf` contains the written security analysis for the system. The README gives the practical setup and usage notes, while the report explains the design decisions, assumptions and threat model behind the implementation.
 
 The report covers:
 
@@ -83,7 +83,7 @@ Talliers retrieve pseudonymised ballots after the election closes, reconstruct t
 Install the dependencies:
 
 ```bash
-pip install requests cryptography
+pip install -r requirements.txt
 ```
 
 Python 3.10+ is recommended.
