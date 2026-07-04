@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+.DS_Store
+
+# Runtime/generated security material
+auth/
+election_keys/
+signature_keys/
+server.log
+*.log
