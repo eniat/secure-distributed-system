@@ -42,7 +42,7 @@ The system models voter registration, election opening, ballot submission, elect
 ├── shamir.py         # Shamir Secret Sharing
 ├── tallier.py        # Key reconstruction and vote tallying
 ├── test_script.py    # Automated full-system test
-├── Report.pdf # Written security analysis and design report
+├── cryptographic-voting-system-security-analysis.pdf # Written security analysis and design report
 └── README.md
 ```
 
@@ -58,7 +58,7 @@ server.log         # Server-side audit log
 
 ## Report
 
-`Report.pdf` contains the written security analysis for the system. The README gives the practical setup and usage notes, while the report explains the design decisions, assumptions and threat model behind the implementation.
+`cryptographic-voting-system-security-analysis.pdf` contains the written security analysis for the system. The README gives the practical setup and usage notes, while the report explains the design decisions, assumptions and threat model behind the implementation.
 
 The report covers:
 
