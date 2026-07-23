@@ -8,7 +8,7 @@ from pathlib import Path
 from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.primitives.asymmetric import ec
 from threading import Lock
-from kerberos import load_user, verify_password, create_token, role_from_header, get_secret
+from src.kerberos import load_user, verify_password, create_token, role_from_header, get_secret
 
 candidates = ["Alice", "Bob", "Charlie"]
 votes = {name: 0 for name in candidates}

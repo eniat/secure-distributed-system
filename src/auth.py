@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from kerberos import role_dir, hash_password
+from src.kerberos import role_dir, hash_password
 
 def add_user(role: str, user_id:str,password:str ) -> Path:
     # ensure directory exists

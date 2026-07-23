@@ -3,7 +3,7 @@ from pathlib import Path
 
 import requests
 
-from auth import add_user
+from src.auth import add_user
 
 PY = sys.executable or "python3"
 BASE_URL = "http://127.0.0.1:5000"

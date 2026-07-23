@@ -6,7 +6,7 @@ from pathlib import Path
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicNumbers, RSAPrivateNumbers
-from shamir import reconstruct
+from src.shamir import reconstruct
 
 base_url = "http://127.0.0.1:5000"
 current_tallier = {"id": None, "token": None}

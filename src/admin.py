@@ -4,7 +4,7 @@ import requests
 from pathlib import Path
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
-from shamir import generate_shares, next_probable_prime_at_least
+from src.shamir import generate_shares, next_probable_prime_at_least
 
 base_url = "http://127.0.0.1:5000"
 RSA_KEY_SIZE = 2048
