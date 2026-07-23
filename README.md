@@ -1,4 +1,5 @@
 # Secure Distributed Voting System
+![tests](https://github.com/eniat/secure-distributed-system/actions/workflows/tests.yml/badge.svg)
 
 Python prototype of a secure electronic voting workflow using role-based authentication, encrypted ballots, digital signatures and threshold key recovery.
 
@@ -18,7 +19,7 @@ The system models voter registration, election opening, ballot submission, elect
 - Duplicate vote prevention per voter and election key.
 - Pseudonymised ballot retrieval for talliers.
 - Server-side audit logging.
-- Automated end-to-end test script.
+- Automated end-to-end test suite covering tallying, access control and ballot secrecy.
 
 ## Tech Stack
 
@@ -33,16 +34,20 @@ The system models voter registration, election opening, ballot submission, elect
 
 ```text
 .
-├── admin.py          # Election control and key generation
-├── auth.py           # Credential setup helper
-├── client.py         # Voter CLI
-├── kerberos.py       # Password hashing and HMAC token helpers
-├── registrar.py      # Voter registration and signing keys
-├── server.py         # HTTP API, election state and audit logging
-├── shamir.py         # Shamir Secret Sharing
-├── tallier.py        # Key reconstruction and vote tallying
-├── test_script.py    # Automated full-system test
-├── cryptographic-voting-system-security-analysis.pdf # Written security analysis and design report
+├── src/
+│   ├── admin.py          # Election control and key generation
+│   ├── auth.py           # Credential setup helper
+│   ├── client.py         # Voter CLI
+│   ├── demo_e2e.py       # Scripted walkthrough of a full election
+│   ├── kerberos.py       # Password hashing and HMAC token helpers
+│   ├── registrar.py      # Voter registration and signing keys
+│   ├── server.py         # HTTP API, election state and audit logging
+│   ├── shamir.py         # Shamir Secret Sharing
+│   └── tallier.py        # Key reconstruction and vote tallying
+├── tests/
+│   └── test_election_e2e.py   # Automated end-to-end test suite
+├── cryptographic-voting-system-security-analysis.pdf
+├── requirements.txt
 └── README.md
 ```
 
@@ -88,27 +93,36 @@ pip install -r requirements.txt
 
 Python 3.10+ is recommended.
 
-## Quick Test
+## Tests
 
-Run the automated lifecycle test:
+The suite drives the real HTTP API end to end: it registers voters with ECDSA keys, generates an RSA election key split into Shamir shares, encrypts and signs ballots, submits them, closes the election, reconstructs the key from threshold shares and verifies the tally.
 
 ```bash
-python test_script.py
+pip install -r requirements.txt pytest
+pytest -q
 ```
 
-The script starts the server, registers voters, creates credentials, opens the election, submits votes, blocks duplicate and late votes, closes the election, runs tallying and retrieves results.
+The server runs in a temporary directory, so no keys, credentials or ballots are written to the working tree. A full run takes roughly two minutes, dominated by RSA key generation.
 
-Expected scripted result:
+Covered properties:
 
-```text
-2 Alice - 1 Charlie - 0 Bob
-```
+- Votes cast are the votes counted, and published results match the tally.
+- A voter cannot vote twice, and ballot stuffing does not change the outcome.
+- Votes after the election closes are rejected.
+- Tampered signatures and unregistered voter IDs are rejected.
+- Voters cannot open or close elections, read ballots, or post a tally.
+- Ballots reach the tallier pseudonymised, with real voter IDs never exposed.
+- Threshold shares reconstruct the key; below-threshold shares fail.
+- Results are unavailable before tallying and while voting is open.
+
+For a narrated walkthrough of the same lifecycle, `src/demo_e2e.py` runs the CLIs as subprocesses and prints each step.
 
 ## Manual Run
 
 Run the components in separate terminals where needed:
 
 ```bash
+cd src
 python server.py      # Start API server
 python registrar.py   # Add voters and list generated voter IDs
 python auth.py        # Create admin, tallier and voter credentials
