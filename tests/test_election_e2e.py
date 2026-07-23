@@ -346,7 +346,9 @@ class TestBallotIntegrity:
         ballot["voter_id"] = "ghost-voter"
         res = requests.post(f"{BASE_URL}/vote", json=ballot,
                             headers=election._auth(token), timeout=5)
-        assert res.status_code == 401
+        # 403 if the identity check rejects it first, 401 if it reaches
+        # signature verification and finds no registered key.
+        assert res.status_code in (401, 403), "an unknown voter id must be rejected"
 
     def test_incomplete_ballot_is_rejected(self, election):
         election.create_staff()
@@ -409,6 +411,7 @@ class TestAccessControl:
         assert res.status_code == 403
 
     def test_voter_cannot_vote_as_another_voter(self, election):
+        """A session must only be able to cast that session's own ballot."""
         election.create_staff()
         attacker, victim = election.register_voters(2)
         election.open()
