@@ -311,6 +311,18 @@ class VoteHandler(BaseHTTPRequestHandler):
             )
             return response(self, 400, {"error": "Missing voter_id, ciphertext or signature"})
 
+                # A voter may only submit a ballot under their own identity
+        if claim.get("id") != voter_id:
+            log_action(
+                "vote_rejected_identity_mismatch",
+                role=claim.get("role"),
+                user_id=claim.get("id"),
+                path=self.path,
+                method=self.command,
+                claimed_voter_id=voter_id
+            )
+            return response(self, 403, {"error": "Token does not match voter_id"})
+
         # Verify signature before counting vote
         try:
             verify_signature(voter_id, cipher, signature)

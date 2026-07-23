@@ -122,13 +122,12 @@ For a narrated walkthrough of the same lifecycle, `src/demo_e2e.py` runs the CLI
 Run the components in separate terminals where needed:
 
 ```bash
-cd src
-python server.py      # Start API server
-python registrar.py   # Add voters and list generated voter IDs
-python auth.py        # Create admin, tallier and voter credentials
-python admin.py       # Open or close the election
-python client.py      # Submit votes and view results
-python tallier.py     # Reconstruct key and tally closed-election ballots
+python -m src.server      # Start API server
+python -m src.registrar   # Add voters and list generated voter IDs
+python -m src.auth        # Create admin, tallier and voter credentials
+python -m src.admin       # Open or close the election
+python -m src.client      # Submit votes and view results
+python -m src.tallier     # Reconstruct key and tally closed-election ballots
 ```
 
 Suggested manual flow:

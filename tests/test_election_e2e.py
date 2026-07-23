@@ -27,10 +27,6 @@ from cryptography.hazmat.primitives.asymmetric import ec, padding
 BASE_URL = "http://127.0.0.1:5000"
 PASSWORD = "correct-horse-battery-staple"
 SRC_DIR = Path(__file__).resolve().parent.parent / "src"
-MODULES = [
-    "server.py", "auth.py", "kerberos.py", "shamir.py",
-    "registrar.py", "admin.py", "client.py", "tallier.py",
-]
 
 
 # ---------------------------------------------------------------- fixtures
@@ -43,28 +39,35 @@ def _port_open(host="127.0.0.1", port=5000):
 
 @pytest.fixture(scope="session")
 def server(tmp_path_factory):
-    """Start server.py in an isolated directory for the whole test session."""
+    """Run the server in an isolated copy of the source tree for the session."""
     workdir = tmp_path_factory.mktemp("election")
-    for name in MODULES:
-        shutil.copy(SRC_DIR / name, workdir / name)
+    shutil.copytree(SRC_DIR, workdir / "src")
 
+    log = open(workdir / "server-stderr.log", "w+")
     proc = subprocess.Popen(
-        [sys.executable, "server.py"],
+        [sys.executable, "-m", "src.server"],
         cwd=workdir,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stdout=log,
+        stderr=subprocess.STDOUT,
     )
+
+    def _server_output() -> str:
+        log.flush()
+        log.seek(0)
+        return log.read().strip() or "(no output)"
 
     deadline = time.time() + 15
     while time.time() < deadline:
         if _port_open():
             break
         if proc.poll() is not None:
-            pytest.fail("server.py exited before becoming ready")
+            pytest.fail(
+                f"the server exited before becoming ready:\n{_server_output()}"
+            )
         time.sleep(0.1)
     else:
         proc.terminate()
-        pytest.fail("server.py did not start within 15s")
+        pytest.fail(f"the server did not start within 15s:\n{_server_output()}")
 
     yield workdir
 
@@ -73,6 +76,7 @@ def server(tmp_path_factory):
         proc.wait(timeout=5)
     except subprocess.TimeoutExpired:
         proc.kill()
+    log.close()
 
 
 @pytest.fixture
@@ -110,7 +114,7 @@ class Election:
 
     def register_voters(self, count: int) -> list[str]:
         with _inside(self.workdir):
-            import registrar, auth
+            from src import registrar, auth
             new = []
             for i in range(count):
                 voter_id = f"voter{len(self.voters) + i}-{int(time.time()*1000)%100000}"
@@ -122,7 +126,7 @@ class Election:
 
     def create_staff(self):
         with _inside(self.workdir):
-            import auth
+            from src import auth
             auth.add_user("admin", "admin", PASSWORD)
             auth.add_user("tallier", "tallier", PASSWORD)
 
@@ -156,7 +160,7 @@ class Election:
 
     def open(self, n_shares: int = 3, threshold: int = 2):
         with _inside(self.workdir):
-            import admin
+            from src import admin
             keys = admin.generate_keys(n_shares, threshold)
         self.key_id = str(keys["key_id"])
         requests.post(
@@ -204,8 +208,8 @@ class Election:
     def tally(self, share_ids: list[int] | None = None) -> dict:
         """Reconstruct the private key from shares and decrypt every ballot."""
         with _inside(self.workdir):
-            from shamir import reconstruct
-            import tallier as tallier_mod
+            from src.shamir import reconstruct
+            from src import tallier as tallier_mod
 
             files = sorted(glob.glob(f"election_keys/share_{self.key_id}_*.json"))
             loaded = [json.loads(Path(f).read_text()) for f in files]
@@ -403,6 +407,17 @@ class TestAccessControl:
                             json={"key_id": election.key_id, "results": {"Alice": 999}},
                             headers=election._auth(token), timeout=5)
         assert res.status_code == 403
+
+    def test_voter_cannot_vote_as_another_voter(self, election):
+        election.create_staff()
+        attacker, victim = election.register_voters(2)
+        election.open()
+
+        token = election.login("voter", attacker).json()["token"]
+        ballot = election.build_ballot(victim, "Alice")
+        res = requests.post(f"{BASE_URL}/vote", json=ballot,
+                            headers=election._auth(token), timeout=5)
+        assert res.status_code == 403, "a voter must not submit a ballot for someone else"
 
 
 class TestBallotSecrecy:
