@@ -5,6 +5,20 @@ Python prototype of a secure electronic voting workflow using role-based authent
 
 The system models voter registration, election opening, ballot submission, election closing, threshold-based tallying and result publication. It is a security-focused distributed systems project, not a production voting platform.
 
+## Demonstration
+
+`src/demo_e2e.py` runs the full election lifecycle end to end, driving the real CLIs as subprocesses: register voters, open the election, cast votes, close, reconstruct the key from threshold shares, tally and publish.
+
+![End-to-end demo run](docs/demo-e2e-run.png)
+
+The tally reconstructs correctly to `{'Alice': 2, 'Charlie': 1}`. The run also exercises the failure paths: a tallier supplying wrong share IDs is rejected before the correct shares reconstruct the key, a vote cast after the election closes is refused, and duplicate votes from one voter are not double-counted.
+
+## Architecture
+
+![Data-flow diagram](docs/data-flow-diagram.png)
+
+Full 19-step data flow across the registrar, admin, voter client, server, tallier and their trust boundaries: voter registration and key generation, election opening and RSA key splitting, encrypted signed ballot submission, election closing, threshold reconstruction and tallying, and result publication. Click to enlarge. The reasoning behind each step is in the report.
+
 ## Features
 
 - Registrar generates voter IDs and ECDSA key pairs.
@@ -46,8 +60,10 @@ The system models voter registration, election opening, ballot submission, elect
 │   └── tallier.py        # Key reconstruction and vote tallying
 ├── tests/
 │   └── test_election_e2e.py   # Automated end-to-end test suite
+├── docs/                # Figures used in this README
 ├── cryptographic-voting-system-security-analysis.pdf
 ├── requirements.txt
+├── LICENSE.txt          # Usage terms
 └── README.md
 ```
 
@@ -68,7 +84,7 @@ server.log         # Server-side audit log
 The report covers:
 
 - Assumptions around off-band key delivery, voter registration and credential storage.
-- A data-flow diagram showing how the admin, registrar, voter client, server and tallier interact.
+- The full data-flow diagram (shown above under Architecture) with per-step narration.
 - Architecture notes for each component, including `admin.py`, `client.py`, `registrar.py`, `server.py`, `tallier.py`, `kerberos.py` and `shamir.py`.
 - Security design trade-offs for RSA-OAEP, ECDSA, Shamir Secret Sharing, HMAC tokens, pseudonymisation and logging.
 - STRIDE threat modelling across spoofing, tampering, repudiation, information disclosure, denial of service and elevation of privilege.
@@ -98,8 +114,11 @@ Python 3.10+ is recommended.
 The suite drives the real HTTP API end to end: it registers voters with ECDSA keys, generates an RSA election key split into Shamir shares, encrypts and signs ballots, submits them, closes the election, reconstructs the key from threshold shares and verifies the tally.
 
 ```bash
+python -m venv .venv
+source .venv/Scripts/activate   # Windows (Git Bash)
+source .venv/bin/activate       # macOS and Linux
 pip install -r requirements.txt pytest
-pytest -q
+python -m pytest -q
 ```
 
 The server runs in a temporary directory, so no keys, credentials or ballots are written to the working tree. A full run takes roughly two minutes, dominated by RSA key generation.
@@ -115,7 +134,10 @@ Covered properties:
 - Threshold shares reconstruct the key; below-threshold shares fail.
 - Results are unavailable before tallying and while voting is open.
 
-For a narrated walkthrough of the same lifecycle, `src/demo_e2e.py` runs the CLIs as subprocesses and prints each step.
+![Test suite passing](docs/test-suite.png)
+*All 22 end-to-end scenarios pass, driving the real HTTP API through the full election lifecycle. The run takes about two minutes, dominated by RSA key generation.*
+
+See the Demonstration section above for a full narrated run.
 
 ## Manual Run
 
